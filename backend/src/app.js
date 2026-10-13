@@ -7,6 +7,7 @@ import helmet from "helmet";
 import inviteRoutes from "./routes/invite.routes.js";
 import walletRoutes from "./routes/wallet.routes.js";
 import purchaseRoutes from "./routes/purchase.routes.js";
+import webtoonRoutes from "./routes/webtoon.routes.js";
 
 import { authenticate } from "./middleware/authenticate.js";
 import { requireApproved } from "./middleware/requireApproved.js";
@@ -107,6 +108,14 @@ app.use("/api/wallet", walletRoutes);
 // --------------------------------------------------
 
 app.use("/api/purchases", purchaseRoutes);
+
+// --------------------------------------------------
+// 웹툰·회차 관리 API
+// --------------------------------------------------
+
+
+app.use("/api/webtoons", webtoonRoutes);
+
 
 // --------------------------------------------------
 // 관리자: 승인 대기 회원 목록
