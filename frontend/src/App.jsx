@@ -1,306 +1,509 @@
-
-import { useEffect, useState } from 'react';
-import { Link, Navigate, Route, Routes, useNavigate } from 'react-router-dom';
+import { useEffect, useState } from "react";
 import {
-  onAuthStateChanged, signOut,
+  BrowserRouter,
+  Routes,
+  Route,
+  Navigate,
+  Link,
+  useNavigate,
+} from "react-router-dom";
+import {
+  onAuthStateChanged,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
-  updateProfile, sendEmailVerification
-} from 'firebase/auth';
+  sendEmailVerification,
+  signOut,
+} from "firebase/auth";
+import { doc, getDoc, setDoc } from "firebase/firestore";
 import {
-  doc, getDoc, setDoc, collection, getDocs, query, where,
-  serverTimestamp
-} from 'firebase/firestore';
-import {
-  Crown, Search, Coins, BookOpen, ShieldCheck,
-  LogOut, ArrowRight, Sparkles, LockKeyhole, LoaderCircle
-} from 'lucide-react';
-import { auth, db, firebaseConfigured } from './firebase/firebase';
+  Crown,
+  Home,
+  BookOpen,
+  ShieldCheck,
+  LogOut,
+  Menu,
+  X,
+  Coins,
+} from "lucide-react";
 
-const API = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8787';
+import { auth, db, firebaseConfigured } from "./firebase/firebase";
+import { api } from "./services/api";
+import Admin from "./pages/Admin";
+import "./styles.css";
+import "./admin.css";
 
-async function request(path, options = {}) {
-  const token = await auth.currentUser?.getIdToken();
-  const res = await fetch(API + path, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...options.headers
-    }
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || '요청에 실패했다.');
-  return data;
-}
-
-function Brand() {
-  return <Link className="brand" to="/">
-    <Crown size={24}/><span>BANGKKU<br/>TOONGKU</span>
-  </Link>;
-}
-
-function AuthScreen({ mode, onComplete }) {
-  const [signup, setSignup] = useState(mode === 'signup');
-  const [fields, setFields] = useState({
-    name: '', email: '', password: '', invite: ''
-  });
-  const [error, setError] = useState('');
+function AuthScreen() {
+  const [mode, setMode] = useState("login");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [nickname, setNickname] = useState("");
+  const [inviteCode, setInviteCode] = useState("");
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
 
-  function change(e) {
-    setFields({ ...fields, [e.target.name]: e.target.value });
-  }
-
-  async function submit(e) {
-    e.preventDefault();
+  async function submit(event) {
+    event.preventDefault();
     setBusy(true);
-    setError('');
+    setError("");
 
     try {
-      if (signup) {
+      if (!firebaseConfigured) {
+        throw new Error("Firebase 설정을 먼저 완료해라.");
+      }
 
-        const validation = await request('/api/invites/validate', {
-            method: 'POST',
-            body: JSON.stringify({ code: fields.invite })
+      if (mode === "register") {
+        if (!nickname.trim() || !inviteCode.trim()) {
+          throw new Error("닉네임과 초대 코드를 입력해라.");
+        }
+
+        const validation = await api.post("/api/invites/validate", {
+          code: inviteCode.trim(),
         });
 
         if (!validation.valid) {
-          throw new Error('초대 코드가 유효하지 않거나 만료됐다.');
+          throw new Error("초대 코드가 유효하지 않거나 만료됐다.");
         }
 
-
         const credential = await createUserWithEmailAndPassword(
-          auth, fields.email, fields.password
+          auth,
+          email.trim(),
+          password
         );
 
-        await updateProfile(credential.user, {
-          displayName: fields.name
+        const user = credential.user;
+
+        await setDoc(doc(db, "users", user.uid), {
+          email: user.email,
+          nickname: nickname.trim(),
+          role: "member",
+          status: "pending",
+          inviteConsumed: false,
+          createdAt: new Date().toISOString(),
         });
 
-        await setDoc(doc(db, 'users', credential.user.uid), {
-          displayName: fields.name,
-          email: fields.email,
-          role: 'member',
-          status: 'pending',
-          createdAt: serverTimestamp()
-        });
+        try {
+          await api.post("/api/invites/consume", {
+            code: inviteCode.trim(),
+          });
+        } catch (consumeError) {
+          await signOut(auth);
+          throw new Error(
+            "계정은 생성됐지만 초대 코드 처리가 실패했다. 관리자에게 문의해라."
+          );
+        }
 
-        await sendEmailVerification(credential.user);
+        await sendEmailVerification(user);
 
-        await request('/api/invites/consume', {
-          method: 'POST',
-          body: JSON.stringify({ code: fields.invite })
-        });
-      } else {
-        await signInWithEmailAndPassword(
-          auth, fields.email, fields.password
+        setError(
+          "가입 신청 완료! 이메일 인증을 마치고 관리자의 승인을 기다려라."
         );
+        return;
       }
 
-      onComplete();
+      await signInWithEmailAndPassword(auth, email.trim(), password);
     } catch (err) {
-      setError(err.message || '요청을 처리하지 못했다.');
+      setError(err.message || "요청을 처리하지 못했다.");
     } finally {
       setBusy(false);
     }
   }
 
-  return <main className="auth-layout">
-    <section className="auth-hero">
-      <Brand/>
-      <span className="eyebrow">A PRIVATE WEBTOON CLUB</span>
-      <h1>아무나 들어올 수 없는<br/><em>특별한 이야기의 공간.</em></h1>
-      <p>초대받은 회원을 위한 오리지널 웹툰 클럽.</p>
-      <div className="hero-stamps">
-        <span>✦ ORIGINAL STORIES</span>
-        <span>✦ MEMBERS ONLY</span>
-      </div>
-    </section>
-
-    <section className="auth-panel">
+  return (
+    <main className="auth-page">
       <div className="auth-card">
-        <div className="auth-icon"><Crown size={26}/></div>
-        <span className="eyebrow">PRIVATE MEMBERSHIP</span>
-        <h2>{signup ? '회원 가입' : '다시 만나 반갑다'}</h2>
-        <p className="muted">
-          {signup ? '초대 코드를 가진 회원만 가입할 수 있다.' : '회원 전용 공간에 입장해라.'}
+        <div className="brand-mark">
+          <Crown size={30} />
+        </div>
+
+        <p className="eyebrow">INVITATION ONLY</p>
+        <h1>BANGKKU TOONGKU</h1>
+        <p className="auth-subtitle">
+          특별한 작품을 위한 프리미엄 웹툰 공간
         </p>
 
-        <form onSubmit={submit}>
-          {signup && <>
-            <label>닉네임<input name="name" required maxLength={30}
-              value={fields.name} onChange={change} placeholder="사용할 닉네임"/></label>
-            <label>초대 코드<input name="invite" required
-              value={fields.invite} onChange={change} placeholder="받은 초대 코드"/></label>
-          </>}
-          <label>이메일<input type="email" name="email" required
-            autoComplete="email" value={fields.email} onChange={change}
-            placeholder="you@example.com"/></label>
-          <label>비밀번호<input type="password" name="password" required
-            minLength={8} autoComplete={signup ? 'new-password' : 'current-password'}
-            value={fields.password} onChange={change} placeholder="8자 이상"/></label>
-          {error && <div className="error">{error}</div>}
-          <button className="gold-button" disabled={busy}>
-            {busy ? <LoaderCircle className="spin" size={17}/> : null}
-            {busy ? '처리 중...' : signup ? '가입 신청하기' : '로그인'}
-            {!busy && <ArrowRight size={17}/>}
+        <div className="auth-tabs">
+          <button
+            className={mode === "login" ? "active" : ""}
+            onClick={() => {
+              setMode("login");
+              setError("");
+            }}
+          >
+            로그인
+          </button>
+          <button
+            className={mode === "register" ? "active" : ""}
+            onClick={() => {
+              setMode("register");
+              setError("");
+            }}
+          >
+            회원가입
+          </button>
+        </div>
+
+        <form onSubmit={submit} className="auth-form">
+          {mode === "register" && (
+            <>
+              <label>닉네임</label>
+              <input
+                value={nickname}
+                onChange={(e) => setNickname(e.target.value)}
+                maxLength={24}
+                placeholder="사용할 닉네임"
+                required
+              />
+
+              <label>초대 코드</label>
+              <input
+                value={inviteCode}
+                onChange={(e) => setInviteCode(e.target.value)}
+                placeholder="초대받은 코드를 입력"
+                required
+              />
+            </>
+          )}
+
+          <label>이메일</label>
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="you@example.com"
+            autoComplete="email"
+            required
+          />
+
+          <label>비밀번호</label>
+          <input
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="비밀번호"
+            autoComplete={
+              mode === "register" ? "new-password" : "current-password"
+            }
+            minLength={6}
+            required
+          />
+
+          {error && <p className="auth-message">{error}</p>}
+
+          <button className="auth-submit" disabled={busy}>
+            {busy
+              ? "처리 중..."
+              : mode === "login"
+                ? "로그인"
+                : "가입 신청"}
           </button>
         </form>
 
-        <button className="text-button" onClick={() => {
-          setSignup(!signup);
-          setError('');
-        }}>
-          {signup ? '이미 계정이 있나? 로그인' : '초대 코드가 있나? 회원 가입'}
-        </button>
-        <div className="secure-note"><LockKeyhole size={13}/> 안전한 회원 인증 시스템</div>
+        <p className="auth-footer">
+          PRIVATE · ORIGINAL · PREMIUM
+        </p>
       </div>
-    </section>
-  </main>;
+    </main>
+  );
+}
+
+function ApprovalPending({ user, profile }) {
+  async function handleLogout() {
+    await signOut(auth);
+  }
+
+  return (
+    <main className="pending-page">
+      <div className="pending-card">
+        <ShieldCheck size={42} />
+        <h1>승인을 기다리는 중</h1>
+        <p>
+          {profile?.nickname || user.email} 님, 가입 신청이 접수됐다.
+        </p>
+        <p>이메일 인증을 완료하고 관리자 승인을 기다려라.</p>
+        <button className="auth-submit" onClick={handleLogout}>
+          로그아웃
+        </button>
+      </div>
+    </main>
+  );
 }
 
 function Shell({ user, profile, children }) {
-  async function logout() { await signOut(auth); }
+  const [menuOpen, setMenuOpen] = useState(false);
+  const navigate = useNavigate();
 
-  return <div className="shell">
-    <aside className="sidebar">
-      <Brand/>
-      <div className="side-label">MEMBERS CLUB</div>
-      <nav>
-        <Link to="/"><Sparkles size={17}/> 홈</Link>
-        <Link to="/browse"><Search size={17}/> 작품 탐색</Link>
-        <Link to="/wallet"><Coins size={17}/> 내 코인</Link>
-        <Link to="/history"><BookOpen size={17}/> 구매 내역</Link>
-        {profile?.role === 'admin' && <Link to="/admin"><ShieldCheck size={17}/> 관리자</Link>}
-      </nav>
-      <div className="sidebar-bottom">
-        <span className="vip-label"><Crown size={14}/> PRIVATE CLUB</span>
-        <div className="user-chip">
-          <div className="avatar">{(profile?.displayName || user.displayName || '회').slice(0,1)}</div>
-          <div className="user-info"><b>{profile?.displayName || '회원'}</b><small>{profile?.status === 'approved' ? '승인 완료' : '승인 대기'}</small></div>
-          <button className="icon-button" onClick={logout} title="로그아웃"><LogOut size={16}/></button>
-        </div>
-      </div>
-    </aside>
-    <main className="main-content">
-      <header className="topbar">
-        <div className="mobile-brand"><Crown size={18}/> BANGKKU TOONGKU</div>
-        <span className="membership"><span className="online-dot"/> PRIVATE MEMBERSHIP <b>VIP</b></span>
+  async function logout() {
+    await signOut(auth);
+    navigate("/");
+  }
+
+  const isAdmin = profile?.role === "admin";
+
+  return (
+    <div className="app-shell">
+      <header className="site-header">
+        <Link className="site-brand" to="/">
+          <Crown size={25} />
+          <span>BANGKKU <b>TOONGKU</b></span>
+        </Link>
+
+        <button
+          className="mobile-menu-button"
+          onClick={() => setMenuOpen(!menuOpen)}
+          aria-label="메뉴 열기"
+        >
+          {menuOpen ? <X /> : <Menu />}
+        </button>
+
+        <nav className={menuOpen ? "site-nav open" : "site-nav"}>
+          <Link to="/" onClick={() => setMenuOpen(false)}>
+            <Home size={17} /> 홈
+          </Link>
+
+          <Link to="/browse" onClick={() => setMenuOpen(false)}>
+            <BookOpen size={17} /> 작품 둘러보기
+          </Link>
+
+          <Link to="/wallet" onClick={() => setMenuOpen(false)}>
+            <Coins size={17} /> 내 지갑
+          </Link>
+
+          {isAdmin && (
+            <Link to="/admin" onClick={() => setMenuOpen(false)}>
+              <ShieldCheck size={17} /> 관리자
+            </Link>
+          )}
+
+          <button onClick={logout}>
+            <LogOut size={17} /> 로그아웃
+          </button>
+        </nav>
       </header>
+
+      <div className="welcome-strip">
+        <span>WELCOME BACK</span>
+        <strong>{profile?.nickname || user.email}</strong>
+        <span className="member-tag">
+          {isAdmin ? "ADMIN" : "MEMBER"}
+        </span>
+      </div>
+
       {children}
+
+      <footer className="site-footer">
+        BANGKKU TOONGKU · ORIGINAL WEBTOON PLATFORM
+      </footer>
+    </div>
+  );
+}
+
+function HomePage() {
+  return (
+    <main className="content-page">
+      <section className="hero-panel">
+        <p className="eyebrow">YOUR PRIVATE WEBTOON CLUB</p>
+        <h1>
+          이야기를 읽는 새로운 방식,
+          <br />
+          <span>방꾸툰</span>
+        </h1>
+        <p>
+          이곳에서 새로운 작품을 발견하고 나만의 독서 목록을 만들어라.
+        </p>
+        <Link className="gold-button" to="/browse">
+          작품 둘러보기
+        </Link>
+      </section>
+
+      <section className="section-heading">
+        <div>
+          <p className="eyebrow">DISCOVER</p>
+          <h2>새로운 이야기가 기다린다</h2>
+        </div>
+      </section>
+
+      <div className="empty-library">
+        <BookOpen size={36} />
+        <h3>작품을 준비 중이다</h3>
+        <p>웹툰 등록 기능을 연결하면 여기에 작품이 표시된다.</p>
+      </div>
     </main>
-  </div>;
+  );
 }
 
-function ApprovalPending({ profile }) {
-  return <div className="center-page">
-    <div className="auth-icon"><LockKeyhole size={25}/></div>
-    <span className="eyebrow">MEMBERSHIP REVIEW</span>
-    <h1>승인을 기다리고 있다.</h1>
-    <p className="muted">가입 신청이 접수됐다. 관리자가 승인하면 작품을 감상할 수 있다.</p>
-    <p className="muted">회원: {profile?.displayName || '회원'}</p>
-    <button className="outline-button" onClick={() => signOut(auth)}>로그아웃</button>
-  </div>;
+function BrowsePage() {
+  return (
+    <main className="content-page">
+      <p className="eyebrow">LIBRARY</p>
+      <h1>작품 둘러보기</h1>
+      <div className="empty-library">
+        <BookOpen size={36} />
+        <h3>아직 등록된 작품이 없다</h3>
+        <p>관리자 작품 등록 기능은 다음 단계에서 연결하면 된다.</p>
+      </div>
+    </main>
+  );
 }
 
-function Home() {
-  const [toons, setToons] = useState([]);
-  const [error, setError] = useState('');
+function WalletPage() {
+  const [wallet, setWallet] = useState(null);
+  const [error, setError] = useState("");
 
   useEffect(() => {
-    async function load() {
-      try {
-        const q = query(
-          collection(db, 'webtoons'),
-          where('status', '==', 'published')
-        );
-        const snap = await getDocs(q);
-        setToons(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-      } catch (err) { setError(err.message); }
-    }
-    load();
+    let active = true;
+
+    api.get("/api/wallet")
+      .then((result) => {
+        if (active) setWallet(result.wallet || result);
+      })
+      .catch((err) => {
+        if (active) setError(err.message || "지갑을 불러오지 못했다.");
+      });
+
+    return () => {
+      active = false;
+    };
   }, []);
 
-  return <div className="page">
-    <section className="welcome-banner">
-      <div className="banner-content">
-        <span className="eyebrow">BANGKKU ORIGINALS · EXCLUSIVE</span>
-        <h1>오늘, 새로운 세계에<br/><em>입장할 준비 됐나?</em></h1>
-        <p>여기서만 만날 수 있는 오리지널 이야기를 만나봐라.</p>
-        <Link className="gold-button link-button" to="/browse">작품 둘러보기 <ArrowRight size={17}/></Link>
+  return (
+    <main className="content-page">
+      <p className="eyebrow">MY ACCOUNT</p>
+      <h1>내 지갑</h1>
+
+      <div className="wallet-card">
+        <Coins size={32} />
+        <span>보유 코인</span>
+        <strong>
+          {wallet
+            ? Number(wallet.balance ?? wallet.coins ?? 0).toLocaleString(
+                "ko-KR"
+              )
+            : error
+              ? "불러오기 실패"
+              : "불러오는 중..."}
+        </strong>
+        {error && <p>{error}</p>}
+        <p>코인은 테스트용 가상 재화다.</p>
       </div>
-        <div className="banner-emblem"><Crown size={100}/><span>PRIVATE<br/>COLLECTION</span></div>
-    </section>
-
-    <div className="section-heading">
-      <div><span className="eyebrow">HANDPICKED FOR YOU</span><h2>오늘의 추천 작품</h2></div>
-      <Link to="/browse" className="subtle-link">전체 작품 <ArrowRight size={15}/></Link>
-    </div>
-
-    {error && <div className="error">{error}</div>}
-    {toons.length ? <div className="toon-grid">
-      {toons.map(toon => <Link to={`/webtoon/${toon.id}`} className="toon-card" key={toon.id}>
-        <div className="toon-cover">
-          {toon.coverUrl ? <img src={toon.coverUrl} alt=""/> : <div className="cover-placeholder"><Crown size={40}/><span>BANGKKU ORIGINAL</span></div>}
-          <span className="genre-tag">{toon.genre || '오리지널'}</span>
-        </div>
-        <div className="toon-card-info"><h3>{toon.title}</h3><p>{toon.description || '새로운 이야기가 시작된다.'}</p></div>
-      </Link>)}
-    </div> : <div className="empty-state"><Crown size={28}/><h3>첫 번째 오리지널을 준비 중이다.</h3><p>관리자가 작품을 등록하면 이곳에 표시된다.</p></div>}
-  </div>;
+    </main>
+  );
 }
 
-function Browse() {
-  return <div className="page"><span className="eyebrow">DISCOVER ORIGINALS</span><h1>작품 탐색</h1><p className="muted">엄선한 오리지널 작품을 만나봐라.</p><Home/></div>;
+function ProtectedApp({ user, profile }) {
+  if (profile?.status !== "approved") {
+    return <ApprovalPending user={user} profile={profile} />;
+  }
+
+  return (
+    <Shell user={user} profile={profile}>
+      <Routes>
+        <Route path="/" element={<HomePage />} />
+        <Route path="/browse" element={<BrowsePage />} />
+        <Route path="/wallet" element={<WalletPage />} />
+
+        <Route
+          path="/admin"
+          element={
+            profile.role === "admin" ? (
+              <Admin />
+            ) : (
+              <Navigate to="/" replace />
+            )
+          }
+        />
+
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </Shell>
+  );
 }
 
-function Placeholder({ title, text }) {
-  return <div className="page"><span className="eyebrow">MEMBERS AREA</span><h1>{title}</h1><div className="empty-state"><Crown size={28}/><h3>{text}</h3><p>다음 구현 단계에서 연결할 기능이다.</p></div></div>;
-}
-
-export default function App() {
+function AppContent() {
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [profileError, setProfileError] = useState("");
 
-  useEffect(() => onAuthStateChanged(auth, async current => {
-    setUser(current);
-    setProfile(null);
-    if (current) {
-      try {
-        const snap = await getDoc(doc(db, 'users', current.uid));
-        if (snap.exists()) setProfile(snap.data());
-      } catch (error) { console.error(error); }
+  useEffect(() => {
+    if (!firebaseConfigured) {
+      setLoading(false);
+      return;
     }
-    setLoading(false);
-  }), []);
 
-  if (loading) return <div className="loading-screen"><Crown size={30}/><p>프리미엄 공간에 연결 중...</p></div>;
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+      setUser(currentUser);
+      setProfile(null);
+      setProfileError("");
 
-  if (!firebaseConfigured) return <div className="setup-warning">
-    <Crown size={32}/><h1>Firebase 설정이 필요하다.</h1>
-    <p>Vercel 환경 변수에 Firebase 웹 설정값을 입력하고 다시 배포해라.</p>
-  </div>;
+      if (!currentUser) {
+        setLoading(false);
+        return;
+      }
 
-  if (!user) return <Routes>
-    <Route path="*" element={<AuthScreen mode="login" onComplete={() => {}}/>}/>
-  </Routes>;
+      try {
+        const profileSnapshot = await getDoc(
+          doc(db, "users", currentUser.uid)
+        );
 
-  if (!profile || profile.status !== 'approved') {
-    return <ApprovalPending profile={profile}/>;
+        if (profileSnapshot.exists()) {
+          setProfile(profileSnapshot.data());
+        } else {
+          setProfileError("회원 프로필이 없다. 관리자에게 문의해라.");
+        }
+      } catch (error) {
+        setProfileError(error.message || "회원 정보를 불러오지 못했다.");
+      } finally {
+        setLoading(false);
+      }
+    });
+
+    return unsubscribe;
+  }, []);
+
+  if (!firebaseConfigured) {
+    return (
+      <main className="pending-page">
+        <div className="pending-card">
+          <Crown size={40} />
+          <h1>BANGKKU TOONGKU</h1>
+          <p>Firebase 설정을 완료하면 로그인 화면이 열린다.</p>
+          <p>환경변수 VITE_FIREBASE_* 값을 확인해라.</p>
+        </div>
+      </main>
+    );
   }
 
-  return <Shell user={user} profile={profile}>
-    <Routes>
-      <Route path="/" element={<Home/>}/>
-      <Route path="/browse" element={<Browse/>}/>
-      <Route path="/wallet" element={<Placeholder title="내 코인" text="코인 지갑을 준비 중이다."/>}/>
-      <Route path="/history" element={<Placeholder title="구매 내역" text="구매 내역을 준비 중이다."/>}/>
-      <Route path="/admin" element={profile.role === 'admin' ? <Placeholder title="관리자 대시보드" text="관리자 도구를 준비 중이다."/> : <Navigate to="/"/>}/>
-      <Route path="/webtoon/:id" element={<Placeholder title="작품 상세" text="작품 상세 페이지를 준비 중이다."/>}/>
-      <Route path="/viewer/:webtoonId/:episodeId" element={<Placeholder title="웹툰 뷰어" text="세로 스크롤 뷰어를 준비 중이다."/>}/>
-      <Route path="*" element={<Navigate to="/"/>}/>
-    </Routes>
-  </Shell>;
+  if (loading) {
+    return <div className="app-loading">BANGKKU TOONGKU 로딩 중...</div>;
+  }
+
+  if (!user) {
+    return <AuthScreen />;
+  }
+
+  if (profileError) {
+    return (
+      <main className="pending-page">
+        <div className="pending-card">
+          <h1>회원 정보를 불러올 수 없다</h1>
+          <p>{profileError}</p>
+          <button onClick={() => signOut(auth)}>로그아웃</button>
+        </div>
+      </main>
+    );
+  }
+
+  if (!profile) {
+    return <div className="app-loading">회원 정보 확인 중...</div>;
+  }
+
+  return <ProtectedApp user={user} profile={profile} />;
+}
+
+export default function App() {
+  return (
+    <BrowserRouter>
+      <AppContent />
+    </BrowserRouter>
+  );
 }
