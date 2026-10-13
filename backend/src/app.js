@@ -26,6 +26,8 @@ app.use(cors({
 }));
 app.use(express.json({ limit: '1mb' }));
 
+app.use('/api/invites', inviteRoutes);
+
 app.get('/api/health', (_req, res) => {
   res.json({ ok: true, service: 'bangkku-toongku-api' });
 });
