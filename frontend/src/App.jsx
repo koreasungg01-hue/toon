@@ -59,10 +59,16 @@ function AuthScreen({ mode, onComplete }) {
 
     try {
       if (signup) {
-        await request('/api/invites/validate', {
-          method: 'POST',
-          body: JSON.stringify({ code: fields.invite })
+
+        const validation = await request('/api/invites/validate', {
+            method: 'POST',
+            body: JSON.stringify({ code: fields.invite })
         });
+
+        if (!validation.valid) {
+          throw new Error('초대 코드가 유효하지 않거나 만료됐다.');
+        }
+
 
         const credential = await createUserWithEmailAndPassword(
           auth, fields.email, fields.password
