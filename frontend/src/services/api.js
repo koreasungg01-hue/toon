@@ -1,26 +1,49 @@
+// frontend/src/services/api.js
 
-import { auth } from '../firebase/firebase';
+import { auth } from "../firebase/firebase";
 
-const API_URL =
-  import.meta.env.VITE_API_BASE_URL || 'http://localhost:8787';
+const API_BASE_URL = (
+  import.meta.env.VITE_API_BASE_URL || "http://localhost:4000"
+).replace(/\/+$/, "");
 
-export async function api(path, options = {}) {
-  const token = await auth.currentUser?.getIdToken();
+async function request(path, options = {}) {
+  const user = auth.currentUser;
 
-  const response = await fetch(`${API_URL}${path}`, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...options.headers
-    }
-  });
-
-  const result = await response.json().catch(() => ({}));
-
-  if (!response.ok) {
-    throw new Error(result.error || '서버 요청에 실패했다.');
+  if (!user) {
+    throw new Error("먼저 로그인해라.");
   }
 
-  return result;
+  const token = await user.getIdToken();
+
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+      ...options.headers,
+    },
+  });
+
+  const data = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    throw new Error(
+      data.message || `요청 실패 (${response.status})`
+    );
+  }
+
+  return data;
 }
+
+export const api = {
+  get(path) {
+    return request(path);
+  },
+
+  post(path, body = {}) {
+    return request(path, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+  },
+};
