@@ -5,6 +5,7 @@ import helmet from 'helmet';
 import inviteRoutes from './routes/invite.routes.js';
 import walletRoutes from './routes/wallet.routes.js';
 import purchaseRoutes from './routes/purchase.routes.js';
+import { initializeWallet } from './services/wallet.service.js';
 import { authenticate } from './middleware/authenticate.js';
 import { requireApproved } from './middleware/requireApproved.js';
 import { requireAdmin } from './middleware/requireAdmin.js';
