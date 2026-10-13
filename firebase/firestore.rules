@@ -1,0 +1,62 @@
+
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function self(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    function admin() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status == 'approved';
+    }
+
+    match /users/{uid} {
+      allow read: if self(uid) || admin();
+
+      allow create: if self(uid)
+        && request.resource.data.status == 'pending'
+        && request.resource.data.role == 'member';
+
+      allow update, delete: if false;
+    }
+
+    match /webtoons/{id} {
+      allow read: if resource.data.status == 'published' || admin();
+      allow write: if admin();
+
+      match /episodes/{episodeId} {
+        allow read: if admin() || resource.data.published == true;
+        allow write: if admin();
+      }
+    }
+
+    match /wallets/{uid} {
+      allow read: if self(uid) || admin();
+      allow write: if false;
+
+      match /ledger/{entryId} {
+        allow read: if self(uid) || admin();
+        allow write: if false;
+      }
+    }
+
+    match /purchases/{purchaseId} {
+      allow read: if admin()
+        || (signedIn() && resource.data.uid == request.auth.uid);
+
+      allow write: if false;
+    }
+
+    match /invites/{code} {
+      allow read, write: if admin();
+    }
+  }
+}
