@@ -2,6 +2,7 @@
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
+import inviteRoutes from './routes/invite.routes.js';
 import { authenticate } from './middleware/authenticate.js';
 import { requireApproved } from './middleware/requireApproved.js';
 import { requireAdmin } from './middleware/requireAdmin.js';
