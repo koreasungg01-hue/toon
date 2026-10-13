@@ -3,6 +3,8 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import inviteRoutes from './routes/invite.routes.js';
+import walletRoutes from './routes/wallet.routes.js';
+import purchaseRoutes from './routes/purchase.routes.js';
 import { authenticate } from './middleware/authenticate.js';
 import { requireApproved } from './middleware/requireApproved.js';
 import { requireAdmin } from './middleware/requireAdmin.js';
@@ -119,6 +121,10 @@ app.get('/api/admin/stats',
     }
   }
 );
+
+
+app.use('/api/wallet', walletRoutes);
+app.use('/api/purchases', purchaseRoutes);
 
 app.use((req, res) => {
   res.status(404).json({ error: 'API 경로를 찾을 수 없다.' });
